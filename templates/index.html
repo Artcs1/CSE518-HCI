@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Accessible Camera App</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      padding: 15px;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      font-size: 24px;
+      color: #2d6cdf;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      flex: 1;
+    }
+
+    .media-container {
+      position: relative;
+      width: 100%;
+      max-width: 800px;
+      margin: 0 auto;
+      background: #000;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    #video, #canvas {
+      width: 100%;
+      height: auto;
+      max-height: 55vh;
+      object-fit: contain;
+      display: block;
+    }
+
+    #canvas {
+      display: none;
+      border: 2px solid #2d6cdf;
+      image-rendering: auto;
+      image-rendering: -webkit-optimize-contrast;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    button {
+      padding: 12px 16px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+      background: #2d6cdf;
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    button:hover:not(:disabled) {
+      background: #1e5acc;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    button:focus {
+      outline: 4px solid #ffd700;
+      outline-offset: 2px;
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .button-primary {
+      background: #28a745;
+    }
+
+    .button-primary:hover:not(:disabled) {
+      background: #218838;
+    }
+
+    .button-secondary {
+      background: #6c757d;
+    }
+
+    .button-secondary:hover:not(:disabled) {
+      background: #5a6268;
+    }
+
+    .button-warning {
+      background: #dc3545;
+    }
+
+    .button-warning:hover:not(:disabled) {
+      background: #c82333;
+    }
+
+    /* Make the mask button span full width */
+    #maskInfo {
+      grid-column: 1 / -1;
+      background: #dc3545;
+    }
+
+    #maskInfo:hover:not(:disabled) {
+      background: #c82333;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 640px) {
+      body {
+        padding: 10px;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin-bottom: 10px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      #maskInfo {
+        grid-column: 1;
+      }
+
+      button {
+        padding: 14px;
+        font-size: 15px;
+      }
+
+      #video, #canvas {
+        max-height: 40vh;
+      }
+    }
+
+    /* Ensure everything fits on screen */
+    @media (max-height: 800px) {
+      h1 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+
+      .container {
+        gap: 8px;
+      }
+
+      .controls {
+        gap: 8px;
+      }
+
+      button {
+        padding: 10px;
+        font-size: 14px;
+      }
+
+      #video, #canvas {
+        max-height: 35vh;
+      }
+    }
+
+    /* Very small screens */
+    @media (max-height: 600px) {
+      h1 {
+        font-size: 16px;
+        margin-bottom: 5px;
+      }
+
+      .container {
+        gap: 5px;
+      }
+
+      .controls {
+        gap: 5px;
+      }
+
+      button {
+        padding: 8px;
+        font-size: 13px;
+      }
+
+      #video, #canvas {
+        max-height: 30vh;
+      }
+    }
+
+    /* Hide file input */
+    #fileInput {
+      display: none;
+    }
+
+    /* Status indicator */
+    .status {
+      text-align: center;
+      padding: 8px;
+      background: #fff;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #666;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+  </style>
+</head>
+
+<body>
+  <h1 aria-label="Accessible camera application for blind users">Accessible Camera App</h1>
+
+  <div class="container">
+    <div class="media-container">
+      <video id="video" autoplay playsinline aria-label="Camera preview"></video>
+      <canvas id="canvas" aria-label="Captured or selected image"></canvas>
+    </div>
+
+    <div class="controls">
+      <button id="takePhoto" class="button-primary" aria-label="Take a picture using the camera">
+        📸 Take Picture
+      </button>
+
+      <button id="fromFiles" class="button-secondary" aria-label="Choose an image file from the phone">
+        📁 From Files
+      </button>
+
+      <button id="describe" disabled aria-label="Generate a description of the image">
+        🗣️ Describe
+      </button>
+
+      <button id="askQuestion" disabled aria-label="Ask a question about the image using your voice">
+        🎤 Ask Question
+      </button>
+
+      <button id="maskInfo" disabled aria-label="Mask confidential information on the picture">
+        🛡️ Mask Private Info
+      </button>
+    </div>
+
+    <input 
+      type="file" 
+      id="fileInput" 
+      accept="image/*" 
+      aria-label="Hidden file input used for selecting images"
+    />
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
