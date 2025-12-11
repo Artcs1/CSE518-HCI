@@ -15,3 +15,15 @@ conda activate py10-cse518
 pip install torch==2.5.1 transformers==4.51.3 accelerate
 python -m pip install paddlepaddle==3.0.0rc1 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 ```
+
+3. Install the requirements.txt
+
+```
+pip install -r requirements.txt
+```
+
+4. Download external models (PaddleOCR)
+   
+```
+wget https://paddleocr.bj.bcebos.com/dygraph_v2.0/pgnet/e2e_server_pgnetA_infer.tar && tar xf e2e_server_pgnetA_infer.tar
+```
