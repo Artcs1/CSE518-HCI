@@ -27,3 +27,9 @@ pip install -r requirements.txt
 ```
 wget https://paddleocr.bj.bcebos.com/dygraph_v2.0/pgnet/e2e_server_pgnetA_infer.tar && tar xf e2e_server_pgnetA_infer.tar
 ```
+
+5. Add a huggingface token
+   
+```
+huggingface-cli login
+```
