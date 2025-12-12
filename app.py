@@ -262,7 +262,6 @@ def speak_stream():
             data = request.json["image"]
             image_base64 = data.split(",")[1]
             
-            # Stream responses from vision API
             stream = call_qwen_vision_api_stream(image_base64, "Describe this image in detail. Use short, clear sentences.")
             
             buffer = ""
@@ -276,19 +275,15 @@ def speak_stream():
                         text_chunk = delta.content
                         buffer += text_chunk
                         
-                        # Check if we have a complete sentence
                         sentences = sentence_endings.split(buffer)
                         
-                        # Process complete sentences (all but the last element)
                         for i in range(len(sentences) - 1):
                             sentence = sentences[i].strip()
                             if sentence:
-                                # Add back the punctuation
                                 sentence += buffer[buffer.find(sentence) + len(sentence)]
                                 
                                 print(f"Generating audio for: {sentence}")
                                 
-                                # Generate audio for this sentence
                                 try:
                                     audio_base64 = text_to_audio_base64(sentence)
                                     yield f"data: {json.dumps({'audio': audio_base64, 'text': sentence})}\n\n"
@@ -296,10 +291,8 @@ def speak_stream():
                                     print(f"Audio generation error: {audio_error}")
                                     continue
                         
-                        # Keep the incomplete sentence in buffer
                         buffer = sentences[-1] if sentences else ""
             
-            # Process any remaining text in buffer
             if buffer.strip():
                 print(f"Generating audio for final: {buffer}")
                 try:
@@ -308,7 +301,6 @@ def speak_stream():
                 except Exception as audio_error:
                     print(f"Final audio generation error: {audio_error}")
             
-            # Signal completion
             yield f"data: {json.dumps({'done': True})}\n\n"
             
         except Exception as e:
@@ -364,15 +356,105 @@ def ask_question():
             "message": f"Question processing failed: {str(e)}"
         }), 500
 
+detection_cache = {}
 @app.route("/detect_private", methods=["POST"])
 def detect_private():
     """Detect private/confidential objects in the image using Qwen Vision API"""
     def generate():
         try:
             data = request.json["image"]
+            user_response = request.json.get("user_response", None)
+            custom_fields = request.json.get("custom_fields", None)
+            session_id = request.json.get("session_id", None)
             image_base64 = data.split(",")[1]
             
-            # First audio: Starting detection
+            cached_data = None
+            if session_id and session_id in detection_cache:
+                cached_data = detection_cache[session_id]
+                print(f"Using cached data for session {session_id}")
+            
+            if cached_data and user_response is not None:
+                print("Skipping detection, using cached results")
+                image = cached_data['image']
+                hr_im = cached_data['hr_im']
+                field_info = cached_data['field_info']
+                bbox_orig = cached_data['bbox_orig']
+                crop_x = cached_data['crop_x']
+                crop_y = cached_data['crop_y']
+                total_angle = cached_data['total_angle']
+                cropped_image_tmp = cached_data['cropped_image_tmp']
+                rotated_image_v1 = cached_data['rotated_image_v1']
+                
+                fields_to_mask_indices = []
+                
+                if 'yes' in user_response.lower():
+                    fields_to_mask_indices = [f['index'] for f in field_info if f['label'] not in ['none', 'other']]
+                    try:
+                        audio = text_to_audio_base64("Proceeding with regular masking of all sensitive fields")
+                        yield f"data: {json.dumps({'audio': audio, 'text': 'Masking all sensitive fields', 'stage': 'masking'})}\n\n"
+                    except Exception as e:
+                        print(f"Audio error: {e}")
+                else:
+                    if custom_fields is None:
+                        sensitive_fields = [f for f in field_info if f['label'] not in ['none', 'other']]
+                        try:
+                            field_names = ', '.join([f['label'] for f in sensitive_fields])
+                            audio = text_to_audio_base64(f"I found these sensitive fields: {field_names}. Which fields do you want to mask? Please name them.")
+                            yield f"data: {json.dumps({'audio': audio, 'text': 'Awaiting custom fields', 'stage': 'awaiting_custom_fields', 'request_custom_fields': True})}\n\n"
+                        except Exception as e:
+                            print(f"Audio error: {e}")
+                        return
+                    
+                    try:
+                        audio = text_to_audio_base64("Masking specified fields")
+                        yield f"data: {json.dumps({'audio': audio, 'text': 'Masking custom fields', 'stage': 'masking'})}\n\n"
+                    except Exception as e:
+                        print(f"Audio error: {e}")
+                    
+                    for field in field_info:
+                        if field['label'] not in ['none', 'other']:
+                            if (field['label'].lower() in custom_fields.lower() or 
+                                field['text'].lower() in custom_fields.lower()):
+                                fields_to_mask_indices.append(field['index'])
+                
+                hr_im_copy = hr_im.copy()
+                masked_count = 0
+                for field in field_info:
+                    if field['index'] in fields_to_mask_indices:
+                        bbox_rotated = field['bbox_2d']
+                        
+                        poly_orig = rotated_bbox_polygon(bbox_rotated, -total_angle, cropped_image_tmp.size, rotated_image_v1.size)
+                        
+                        final_poly = []
+                        for (x, y) in poly_orig:
+                            final_poly.append((crop_x + x, crop_y + y))
+                        
+                        draw_orig = ImageDraw.Draw(hr_im_copy)
+                        draw_orig.polygon(final_poly, fill="black")
+                        masked_count += 1
+                
+                if masked_count > 0:
+                    try:
+                        audio = text_to_audio_base64(f"Masked {masked_count} sensitive text region{'s' if masked_count != 1 else ''}. Processing complete.")
+                        yield f"data: {json.dumps({'audio': audio, 'text': f'Masked {masked_count} sensitive regions', 'stage': 'complete'})}\n\n"
+                    except Exception as e:
+                        print(f"Audio error: {e}")
+                else:
+                    try:
+                        audio = text_to_audio_base64("No sensitive information was masked. Processing complete.")
+                        yield f"data: {json.dumps({'audio': audio, 'text': 'No sensitive information masked', 'stage': 'complete'})}\n\n"
+                    except Exception as e:
+                        print(f"Audio error: {e}")
+                
+                if session_id and session_id in detection_cache:
+                    del detection_cache[session_id]
+                
+                image_base64_result = convert_to_bytes(hr_im_copy)
+                yield f"data: {json.dumps({'done': True, 'has_private_info': True, 'cropped_image': f'data:image/png;base64,{image_base64_result}'})}\n\n"
+                return
+            
+            print("Running full detection pipeline")
+            
             try:
                 audio = text_to_audio_base64("Scanning for private information")
                 yield f"data: {json.dumps({'audio': audio, 'text': 'Scanning for private information', 'stage': 'start'})}\n\n"
@@ -387,15 +469,14 @@ def detect_private():
             image_bytes = BytesIO(image_data)
             image = Image.open(image_bytes)
 
-            cropped_image_base64 = None
             has_private = True
             if bbox_orig is not None:
-                # Second audio: Found document
                 try:
                     audio = text_to_audio_base64("Private document detected. Analyzing content.")
                     yield f"data: {json.dumps({'audio': audio, 'text': 'Private document detected. Analyzing content.', 'stage': 'detected'})}\n\n"
                 except Exception as e:
                     print(f"Audio error: {e}")
+                
                 cropped_image = image.crop(bbox_orig)
                 
                 pred_mask = segmentation_agent.segment_document(cropped_image)
@@ -421,27 +502,26 @@ def detect_private():
                     rotated_image_v1.save("rotated_image.jpg")
                     points, strs, elapse = pladdleOCR()
     
-                image_base64 = convert_to_bytes(rotated_image_v1)            
+                image_base64_rotated = convert_to_bytes(rotated_image_v1)            
                 prompt = "Locate all text (bbox coordinates). Include all readable and blury text and output in JSON format."
-                ocr_result = call_qwen_vision_api(image_base64, prompt)
-                data = extract_bbox_removing_incomplete(ocr_result)
+                ocr_result = call_qwen_vision_api(image_base64_rotated, prompt)
+                data_extracted = extract_bbox_removing_incomplete(ocr_result)
     
                 hr_im  = image.copy()
     
                 meta_categories = ["bank statement", "letter with address", "credit or debit card", "bills or receipt", "preganancy test", "pregnancy test box", "mortage or investment report", "doctor prescription", "empty pill bottle", "condom with plastic bag", "tattoo sleeve", "transcript", "business card", "condom box", "local newspaper", "medical record document", "email", "phone", "id card",]
     
                 prompt = f"From this list of categories: {' ,'.join(meta_categories)}, which one is related to this image. Only output the category" 
-                image_base64 = convert_to_bytes(hr_im)
-                metacategory = call_qwen_vision_api(image_base64, prompt)
+                image_base64_full = convert_to_bytes(hr_im)
+                metacategory = call_qwen_vision_api(image_base64_full, prompt)
 
                 try:
                     audio = text_to_audio_base64(f"I identified a {metacategory}")
-                    yield f"data: {json.dumps({'audio': audio, 'text': 'Scanning for private information', 'stage': 'start'})}\n\n"
+                    yield f"data: {json.dumps({'audio': audio, 'text': f'I identified a {metacategory}', 'stage': 'identified'})}\n\n"
                 except Exception as e:
                     print(f"Audio error: {e}")
             
-
-                texts = [d['text_content']for d in data]
+                texts = [d['text_content'] for d in data_extracted]
     
                 with open(f'label2item_list.json', 'r') as file:
                     unique_categories_per_metacategory = json.load(file)
@@ -450,59 +530,53 @@ def detect_private():
                 unique_categories.append("none")
                 
                 high_risk = []
+                field_info = []
                 for idx, text in enumerate(texts):
-                    # Audio update: Classifying text
-                    if idx == 0:  # Only announce once at the start
+                    if idx == 0:
                         try:
                             audio = text_to_audio_base64(f"Classifying {len(texts)} text regions")
                             yield f"data: {json.dumps({'audio': audio, 'text': f'Classifying {len(texts)} text regions', 'stage': 'classifying'})}\n\n"
                         except Exception as e:
                             print(f"Audio error: {e}")
                     
-                    prompt = f"Based on the image, classify this text: '{text} 'using these categories: {unique_categories}. Output only one category."
-                    label = call_qwen_vision_api(image_base64, prompt)
-                    try:
-                        audio = text_to_audio_base64(f"{text} is a {label}")
-                        yield f"data: {json.dumps({'audio': audio, 'text': f'{text} is a {label}', 'stage': 'classifying'})}\n\n"
-                    except Exception as e:
-                        print(f"Audio error: {e}")
+                    prompt = f"Based on the image, classify this text: '{text}' using these categories: {unique_categories}. Output only one category."
+                    label = call_qwen_vision_api(image_base64_full, prompt)
                     
-
                     high_risk.append(label)
-    
+                    field_info.append({
+                        'text': text, 
+                        'label': label, 
+                        'index': idx,
+                        'bbox_2d': data_extracted[idx]['bbox_2d']
+                    })
+                
                 crop_x = bbox_orig[0]
                 crop_y = bbox_orig[1]
                 
-                masked_count = 0
-                for id_p, bbox_rotated_tmp in enumerate(data):
-                  bbox_rotated = bbox_rotated_tmp['bbox_2d']
-                  text = bbox_rotated_tmp['text_content']
-                  poly_orig = rotated_bbox_polygon(bbox_rotated, -total_angle, cropped_image_tmp.size, rotated_image_v1.size)
+                import uuid
+                if not session_id:
+                    session_id = str(uuid.uuid4())
                 
-                  final_poly = []
-                  for (x,y) in poly_orig:
-                    final_poly.append((crop_x+x, crop_y+y))
+                detection_cache[session_id] = {
+                    'image': image,
+                    'hr_im': hr_im,
+                    'field_info': field_info,
+                    'bbox_orig': bbox_orig,
+                    'crop_x': crop_x,
+                    'crop_y': crop_y,
+                    'total_angle': total_angle,
+                    'cropped_image_tmp': cropped_image_tmp,
+                    'rotated_image_v1': rotated_image_v1
+                }
                 
-                  if high_risk[id_p] != 'none' and  high_risk[id_p] != 'other':
-                      draw_orig = ImageDraw.Draw(hr_im)
-                      draw_orig.polygon(final_poly, fill="black")
-                      masked_count += 1
+                sensitive_fields = [f for f in field_info if f['label'] not in ['none', 'other']]
                 
-                # Final audio: Masking complete
-                if masked_count > 0:
-                    try:
-                        audio = text_to_audio_base64(f"Masked {masked_count} sensitive text region{'s' if masked_count != 1 else ''}. Processing complete.")
-                        yield f"data: {json.dumps({'audio': audio, 'text': f'Masked {masked_count} sensitive regions', 'stage': 'complete'})}\n\n"
-                    except Exception as e:
-                        print(f"Audio error: {e}")
-                else:
-                    try:
-                        audio = text_to_audio_base64("No sensitive information found. Processing complete.")
-                        yield f"data: {json.dumps({'audio': audio, 'text': 'No sensitive information found', 'stage': 'complete'})}\n\n"
-                    except Exception as e:
-                        print(f"Audio error: {e}")
-                
-                image_base64 = convert_to_bytes(hr_im)
+                try:
+                    audio = text_to_audio_base64("Do you want to proceed with regular masking? Say yes or no.")
+                    yield f"data: {json.dumps({'audio': audio, 'text': 'Awaiting user response', 'stage': 'awaiting_response', 'request_user_input': True, 'session_id': session_id})}\n\n"
+                except Exception as e:
+                    print(f"Audio error: {e}")
+                return
     
             else:
                 has_private = False
@@ -511,9 +585,8 @@ def detect_private():
                     yield f"data: {json.dumps({'audio': audio, 'text': 'No private document detected', 'stage': 'none'})}\n\n"
                 except Exception as e:
                     print(f"Audio error: {e}")
-
-            
-            yield f"data: {json.dumps({'done': True, 'detection': detection_result, 'has_private_info': has_private, 'cropped_image': f'data:image/png;base64,{image_base64}' if image_base64 else None})}\n\n"
+                
+                yield f"data: {json.dumps({'done': True, 'detection': detection_result, 'has_private_info': has_private, 'cropped_image': None})}\n\n"
             
         except Exception as e:
             print(f'Exception: {str(e)}')
@@ -521,7 +594,7 @@ def detect_private():
             traceback.print_exc()
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
-            
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')           
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)

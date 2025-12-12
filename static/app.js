@@ -418,6 +418,8 @@ class sightAI{
         }
     }
 
+    // Updated sendMaskInfo method for the sightAI class
+    
     async sendMaskInfo() {
         try {
             this.maskInfoBtn.disabled = true;
@@ -429,39 +431,57 @@ class sightAI{
                 this.currentAudio.pause();
                 this.currentAudio = null;
             }
-
+    
+            // Start the detection process (no session_id on first call)
+            await this.callDetectPrivate(null, null, null);
+    
+        } catch (error) {
+            console.error('Error processing the image:', error);
+            alert('Error processing the image. Please try again.');
+            
+            this.maskInfoBtn.disabled = false;
+            this.maskInfoBtn.textContent = "🛡️ Mask Information";
+        }
+    }
+    
+    async callDetectPrivate(userResponse, customFields, sessionId) {
+        try {
             const finalData = {
                 completedAt: new Date().toISOString(),
-                image: this.currentImageData
+                image: this.currentImageData,
+                user_response: userResponse,
+                custom_fields: customFields,
+                session_id: sessionId
             };
-
+    
             const response = await fetch('/detect_private', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(finalData)
             });
-
+    
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-
+    
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
-
+            let receivedSessionId = sessionId;
+    
             while (true) {
                 const { done, value } = await reader.read();
-
+    
                 if (done) {
                     console.log('Detection stream complete');
                     break;
                 }
-
+    
                 buffer += decoder.decode(value, { stream: true });
                 
                 const lines = buffer.split('\n\n');
                 buffer = lines.pop() || '';
-
+    
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         try {
@@ -469,20 +489,60 @@ class sightAI{
                             if (!jsonStr) continue;
                             
                             const data = JSON.parse(jsonStr);
-
+    
                             if (data.error) {
                                 console.error('Server error:', data.error);
                                 alert(`Error: ${data.error}`);
-                                break;
+                                this.maskInfoBtn.disabled = false;
+                                this.maskInfoBtn.textContent = "🛡️ Mask Information";
+                                return;
                             }
-
+    
                             if (data.audio) {
                                 this.audioQueue.push(data.audio);
                                 if (!this.isPlayingAudio) {
                                     this.playNextAudio();
                                 }
                             }
-
+    
+                            // Capture session_id from server
+                            if (data.session_id) {
+                                receivedSessionId = data.session_id;
+                                console.log('Received session ID:', receivedSessionId);
+                            }
+    
+                            // Server is asking: "Do you want regular masking?"
+                            if (data.request_user_input) {
+                                // Wait for audio queue to finish
+                                await this.waitForAudioQueue();
+                                
+                                // Get user's voice response
+                                const userVoiceResponse = await this.getUserVoiceResponse();
+                                
+                                if (userVoiceResponse === 'yes') {
+                                    // User wants regular masking - call again with yes and session_id
+                                    await this.callDetectPrivate('yes', null, receivedSessionId);
+                                } else {
+                                    // User said no - server will ask for custom fields next
+                                    await this.callDetectPrivate('no', null, receivedSessionId);
+                                }
+                                return;
+                            }
+    
+                            // Server is asking: "Which fields do you want to mask?"
+                            if (data.request_custom_fields) {
+                                // Wait for audio queue to finish
+                                await this.waitForAudioQueue();
+                                
+                                // Get user's custom field names
+                                const customFieldsResponse = await this.getCustomFieldsResponse();
+                                
+                                // Call again with custom fields and session_id
+                                await this.callDetectPrivate('no', customFieldsResponse, receivedSessionId);
+                                return;
+                            }
+    
+                            // Processing is done
                             if (data.done) {
                                 const checkQueue = setInterval(() => {
                                     if (!this.isPlayingAudio && this.audioQueue.length === 0) {
@@ -503,13 +563,68 @@ class sightAI{
                     }
                 }
             }
-
+    
         } catch (error) {
-            console.error('Error processing the image:', error);
-            alert('Error processing the image. Please try again.');
+            throw error;
+        }
+    }
+    
+    async waitForAudioQueue() {
+        return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+                if (!this.isPlayingAudio && this.audioQueue.length === 0) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100);
+        });
+    }
+    
+    async getUserVoiceResponse() {
+        try {
+            // Show recording modal
+            const audioBlob = await this.showRecordingModal();
             
-            this.maskInfoBtn.disabled = false;
-            this.maskInfoBtn.textContent = "🛡️ Mask Information";
+            // Transcribe the audio
+            const response = await this.transcribeAudio(audioBlob);
+            
+            console.log('User voice response:', response);
+            
+            // Parse yes/no
+            const lowerResponse = response.toLowerCase().trim();
+            if (lowerResponse.includes('yes') || 
+                lowerResponse.includes('yeah') || 
+                lowerResponse.includes('yep') || 
+                lowerResponse.includes('sure') ||
+                lowerResponse.includes('okay') ||
+                lowerResponse.includes('ok')) {
+                return 'yes';
+            } else {
+                return 'no';
+            }
+        } catch (error) {
+            console.error('Error getting voice response:', error);
+            // Default to 'no' if there's an error
+            return 'no';
+        }
+    }
+    
+    async getCustomFieldsResponse() {
+        try {
+            // Show recording modal for custom fields
+            const audioBlob = await this.showRecordingModal();
+            
+            // Transcribe the audio
+            const response = await this.transcribeAudio(audioBlob);
+            
+            console.log('Custom fields response:', response);
+            
+            return response;
+            
+        } catch (error) {
+            console.error('Error getting custom fields:', error);
+            // Return empty string if error
+            return '';
         }
     }
 
