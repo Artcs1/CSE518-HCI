@@ -10,14 +10,17 @@ class sightAI{
         this.askQuestionBtn = document.getElementById("askQuestion");
 
         this.currentImageData = null;
-        this.recognition = null;
-        this.isListening = false;
         this.audioQueue = [];
         this.isPlayingAudio = false;
         this.currentAudio = null;
+        
+        // Media recorder for cross-browser speech input
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.isRecording = false;
+        this.recordingStream = null;
 
         this.initializeEvents();
-        this.initializeSpeechRecognition();
         this.startCamera();
     }
 
@@ -28,19 +31,6 @@ class sightAI{
         } catch (error) {
             console.error("Camera access denied:", error);
             alert("Unable to access camera. Please check permissions.");
-        }
-    }
-
-    initializeSpeechRecognition() {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
-        if (SpeechRecognition) {
-            this.recognition = new SpeechRecognition();
-            this.recognition.continuous = false;
-            this.recognition.interimResults = false;
-            this.recognition.lang = 'en-US';
-        } else {
-            console.warn("Speech recognition not supported in this browser");
         }
     }
 
@@ -60,35 +50,14 @@ class sightAI{
     }
 
     displayImageOnCanvas(imageData) {
-    const img = new Image();
-        img.onload = () => {
-            // Use the original image dimensions for better quality
-            this.canvas.width = img.width;
-            this.canvas.height = img.height;
-
-            const ctx = this.canvas.getContext("2d");
-
-            // Improve rendering quality
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-
-            ctx.drawImage(img, 0, 0);
-
-            this.canvas.style.display = "block";
-            this.video.style.display = "none";
-
-            this.currentImageData = imageData;
-            this.enableActionButtons();
-        };
-        img.src = imageData;
-    }
-
-    displayImageOnCanvas2(imageData) {
         const img = new Image();
         img.onload = () => {
             this.canvas.width = img.width;
             this.canvas.height = img.height;
+
             const ctx = this.canvas.getContext("2d");
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0);
 
             this.canvas.style.display = "block";
@@ -108,7 +77,6 @@ class sightAI{
         ctx.drawImage(this.video, 0, 0);
 
         let imageData = this.canvas.toDataURL("image/png");
-
         this.displayImageOnCanvas(imageData);
     }
 
@@ -121,6 +89,332 @@ class sightAI{
                 this.displayImageOnCanvas(imageData);
             };
             reader.readAsDataURL(file);
+        }
+    }
+
+    // NEW: Record audio using MediaRecorder (works in all modern browsers)
+    async recordAudio(maxDuration = 10000) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Request microphone access
+                this.recordingStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    } 
+                });
+
+                this.audioChunks = [];
+                
+                // Use different MIME types based on browser support
+                let mimeType = 'audio/webm';
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+                    mimeType = 'audio/ogg;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4';
+                } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+                    mimeType = 'audio/wav';
+                }
+
+                this.mediaRecorder = new MediaRecorder(this.recordingStream, { mimeType });
+                
+                this.mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        this.audioChunks.push(event.data);
+                    }
+                };
+
+                this.mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(this.audioChunks, { type: mimeType });
+                    
+                    // Stop all tracks
+                    if (this.recordingStream) {
+                        this.recordingStream.getTracks().forEach(track => track.stop());
+                        this.recordingStream = null;
+                    }
+                    
+                    resolve(audioBlob);
+                };
+
+                this.mediaRecorder.onerror = (event) => {
+                    if (this.recordingStream) {
+                        this.recordingStream.getTracks().forEach(track => track.stop());
+                        this.recordingStream = null;
+                    }
+                    reject(new Error('Recording failed: ' + event.error));
+                };
+
+                // Start recording
+                this.mediaRecorder.start();
+                this.isRecording = true;
+
+                // Auto-stop after max duration
+                setTimeout(() => {
+                    if (this.isRecording && this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                        this.stopRecording();
+                    }
+                }, maxDuration);
+
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    stopRecording() {
+        if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+            this.isRecording = false;
+            this.mediaRecorder.stop();
+        }
+    }
+
+    // NEW: Show recording modal with visual feedback
+    showRecordingModal() {
+        return new Promise((resolve, reject) => {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                padding: 20px;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: white;
+                padding: 40px;
+                border-radius: 12px;
+                max-width: 400px;
+                width: 100%;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+
+            modal.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <div id="recordingIndicator" style="
+                        width: 80px;
+                        height: 80px;
+                        background: #dc3545;
+                        border-radius: 50%;
+                        margin: 0 auto 20px;
+                        animation: pulse 1.5s ease-in-out infinite;
+                    "></div>
+                    <style>
+                        @keyframes pulse {
+                            0%, 100% { transform: scale(1); opacity: 1; }
+                            50% { transform: scale(1.1); opacity: 0.8; }
+                        }
+                    </style>
+                </div>
+                <h2 style="margin: 0 0 10px 0; color: #2d6cdf; font-size: 22px;">🎤 Recording...</h2>
+                <p style="margin: 0 0 20px 0; color: #666; font-size: 16px;">
+                    Ask your question about the image
+                </p>
+                <p id="timer" style="margin: 0 0 25px 0; color: #999; font-size: 14px;">
+                    Time: 0s / 10s
+                </p>
+                <button 
+                    id="stopRecording"
+                    style="
+                        padding: 14px 32px;
+                        font-size: 16px;
+                        background: #dc3545;
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        width: 100%;
+                    "
+                >Stop & Submit</button>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            const stopBtn = modal.querySelector('#stopRecording');
+            const timer = modal.querySelector('#timer');
+            
+            let startTime = Date.now();
+            const timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                timer.textContent = `Time: ${elapsed}s / 10s`;
+            }, 100);
+
+            let audioPromise = null;
+
+            const cleanup = () => {
+                clearInterval(timerInterval);
+                if (overlay.parentNode) {
+                    document.body.removeChild(overlay);
+                }
+            };
+
+            // Start recording immediately
+            audioPromise = this.recordAudio(10000);
+
+            stopBtn.addEventListener('click', () => {
+                this.stopRecording();
+                
+                audioPromise.then(audioBlob => {
+                    cleanup();
+                    resolve(audioBlob);
+                }).catch(err => {
+                    cleanup();
+                    reject(err);
+                });
+            });
+
+            // Handle recording completion
+            audioPromise.then(audioBlob => {
+                if (overlay.parentNode) {
+                    cleanup();
+                    resolve(audioBlob);
+                }
+            }).catch(err => {
+                cleanup();
+                reject(err);
+            });
+        });
+    }
+
+    async transcribeAudio(audioBlob) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        if (SpeechRecognition) {
+            try {
+                console.log('Using fallback transcription method');
+            } catch (e) {
+                console.log('Web Speech API failed, using backend');
+            }
+        }
+
+        // Use backend transcription service
+        return await this.transcribeAudioBackend(audioBlob);
+    }
+
+    async transcribeAudioBackend(audioBlob) {
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+
+        const response = await fetch('/transcribe_audio', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`Transcription failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            return result.text;
+        } else {
+            throw new Error(result.message || 'Transcription failed');
+        }
+    }
+
+    async askQuestion() {
+        if (!this.currentImageData) {
+            alert("Please take or select an image first.");
+            return;
+        }
+
+        try {
+            this.askQuestionBtn.disabled = true;
+            this.askQuestionBtn.textContent = "🎤 Starting...";
+
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => stream.getTracks().forEach(track => track.stop()));
+            } catch (error) {
+                alert("Microphone access denied. Please enable microphone permissions and try again.");
+                this.askQuestionBtn.disabled = false;
+                this.askQuestionBtn.textContent = "🎤 Ask Question";
+                return;
+            }
+
+            const audioBlob = await this.showRecordingModal();
+            
+            this.askQuestionBtn.textContent = "⏳ Transcribing...";
+            
+            const question = await this.transcribeAudio(audioBlob);
+            
+            if (!question || question.trim() === '') {
+                throw new Error('Could not understand the question. Please try again.');
+            }
+
+            console.log('Transcribed question:', question);
+            
+            this.askQuestionBtn.textContent = "⏳ Processing...";
+            await this.processQuestion(question.trim());
+
+        } catch (error) {
+            await this.processQuestion("Error with voice question");
+	    console.error('Error with voice question:', error);
+            //alert(`Error: ${error.message || 'Voice question failed. Please try again.'}`);
+        } finally {
+            this.askQuestionBtn.disabled = false;
+            this.askQuestionBtn.textContent = "🎤 Ask Question";
+        }
+    }
+
+    // Process the question and get audio response
+    async processQuestion(question) {
+        const finalData = {
+            completedAt: new Date().toISOString(),
+            image: this.currentImageData,
+            question: question
+        };
+
+        const response = await fetch('/ask_question', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(finalData)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            console.log('Answer:', result.answer);
+            
+            // Play audio response
+            const audio = new Audio(result.audio);
+            
+            return new Promise((resolve, reject) => {
+                audio.onended = () => {
+                    console.log('Audio answer completed');
+                    resolve();
+                };
+
+                audio.onerror = (e) => {
+                    console.error('Audio playback error:', e);
+                    reject(new Error('Audio playback failed'));
+                };
+
+                audio.play().catch(err => {
+                    console.error('Play failed:', err);
+                    reject(err);
+                });
+            });
+        } else {
+            throw new Error(result.message || 'Unknown error');
         }
     }
 
@@ -175,7 +469,6 @@ class sightAI{
                             if (!jsonStr) continue;
                             
                             const data = JSON.parse(jsonStr);
-                            console.log('Received detection data:', data);
 
                             if (data.error) {
                                 console.error('Server error:', data.error);
@@ -184,25 +477,19 @@ class sightAI{
                             }
 
                             if (data.audio) {
-                                console.log('Stage:', data.stage, 'Text:', data.text);
                                 this.audioQueue.push(data.audio);
-
                                 if (!this.isPlayingAudio) {
                                     this.playNextAudio();
                                 }
                             }
 
                             if (data.done) {
-                                console.log('Detection complete');
-                                
                                 const checkQueue = setInterval(() => {
                                     if (!this.isPlayingAudio && this.audioQueue.length === 0) {
                                         clearInterval(checkQueue);
                                         
                                         if (data.has_private_info && data.cropped_image) {
                                             this.displayImageOnCanvas(data.cropped_image);
-                                        } else {
-                                            console.log("No private information detected");
                                         }
                                         
                                         this.maskInfoBtn.disabled = false;
@@ -211,23 +498,10 @@ class sightAI{
                                 }, 100);
                             }
                         } catch (e) {
-                            console.error('Error parsing JSON:', e, 'Line:', line);
+                            console.error('Error parsing JSON:', e);
                         }
                     }
                 }
-            }
-
-            if (this.isPlayingAudio || this.audioQueue.length > 0) {
-                const checkQueue = setInterval(() => {
-                    if (!this.isPlayingAudio && this.audioQueue.length === 0) {
-                        clearInterval(checkQueue);
-                        this.maskInfoBtn.disabled = false;
-                        this.maskInfoBtn.textContent = "🛡️ Mask Information";
-                    }
-                }, 100);
-            } else {
-                this.maskInfoBtn.disabled = false;
-                this.maskInfoBtn.textContent = "🛡️ Mask Information";
             }
 
         } catch (error) {
@@ -236,81 +510,6 @@ class sightAI{
             
             this.maskInfoBtn.disabled = false;
             this.maskInfoBtn.textContent = "🛡️ Mask Information";
-        }
-    }
-
-    async askQuestion() {
-        if (!this.recognition) {
-            alert("Speech recognition is not supported in your browser. Please use Chrome or Edge.");
-            return;
-        }
-
-        try {
-            this.askQuestionBtn.disabled = true;
-            this.askQuestionBtn.textContent = "🎤 Listening...";
-            this.isListening = true;
-
-            this.recognition.start();
-
-            this.recognition.onresult = async (event) => {
-                const transcript = event.results[0][0].transcript;
-                console.log('Question heard:', transcript);
-
-                this.askQuestionBtn.textContent = "⏳ Processing...";
-
-                const finalData = {
-                    completedAt: new Date().toISOString(),
-                    image: this.currentImageData,
-                    question: transcript
-                };
-
-                const response = await fetch('/ask_question', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(finalData)
-                });
-
-                const result = await response.json();
-
-                if (result.status === 'success') {
-                    const audio = new Audio(result.audio);
-                    audio.play();
-                    
-                    audio.onended = () => {
-                        this.askQuestionBtn.disabled = false;
-                        this.askQuestionBtn.textContent = "🎤 Ask a Question";
-                        this.isListening = false;
-                    };
-                } else {
-                    alert(`Error: ${result.message}`);
-                    this.askQuestionBtn.disabled = false;
-                    this.askQuestionBtn.textContent = "🎤 Ask a Question";
-                    this.isListening = false;
-                }
-            };
-
-            this.recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                alert(`Speech recognition error: ${event.error}`);
-                this.askQuestionBtn.disabled = false;
-                this.askQuestionBtn.textContent = "🎤 Ask a Question";
-                this.isListening = false;
-            };
-
-            this.recognition.onend = () => {
-                if (this.isListening) {
-                    this.askQuestionBtn.disabled = false;
-                    this.askQuestionBtn.textContent = "🎤 Ask a Question";
-                    this.isListening = false;
-                }
-            };
-
-        } catch (error) {
-            console.error('Error with voice question:', error);
-            alert('Error processing voice question. Please try again.');
-            this.askQuestionBtn.disabled = false;
-            this.askQuestionBtn.textContent = "🎤 Ask a Question";
-            this.isListening = false;
         }
     }
 
@@ -327,17 +526,12 @@ class sightAI{
         this.currentAudio = new Audio(`data:audio/mp3;base64,${audioData}`);
 
         this.currentAudio.onended = () => {
-            console.log('Audio chunk finished');
             this.playNextAudio();
         };
 
         this.currentAudio.onerror = (e) => {
             console.error('Error playing audio chunk:', e);
             this.playNextAudio();
-        };
-
-        this.currentAudio.oncanplaythrough = () => {
-            console.log('Audio loaded, playing...');
         };
 
         this.currentAudio.play().catch(err => {
@@ -381,7 +575,6 @@ class sightAI{
                 const { done, value } = await reader.read();
 
                 if (done) {
-                    console.log('Stream complete');
                     break;
                 }
 
@@ -397,7 +590,6 @@ class sightAI{
                             if (!jsonStr) continue;
                             
                             const data = JSON.parse(jsonStr);
-                            console.log('Received data:', data);
 
                             if (data.error) {
                                 console.error('Server error:', data.error);
@@ -406,7 +598,6 @@ class sightAI{
                             }
 
                             if (data.done) {
-                                console.log('Received done signal');
                                 const checkQueue = setInterval(() => {
                                     if (!this.isPlayingAudio && this.audioQueue.length === 0) {
                                         clearInterval(checkQueue);
@@ -415,36 +606,19 @@ class sightAI{
                                     }
                                 }, 100);
                             } else if (data.audio) {
-                                console.log('Adding audio to queue, text:', data.text);
                                 this.audioQueue.push(data.audio);
-
                                 if (!this.isPlayingAudio) {
                                     this.playNextAudio();
                                 }
                             }
                         } catch (e) {
-                            console.error('Error parsing JSON:', e, 'Line:', line);
+                            console.error('Error parsing JSON:', e);
                         }
                     }
                 }
             }
 
-            if (this.isPlayingAudio || this.audioQueue.length > 0) {
-                const checkQueue = setInterval(() => {
-                    if (!this.isPlayingAudio && this.audioQueue.length === 0) {
-                        clearInterval(checkQueue);
-                        this.describeBtn.disabled = false;
-                        this.describeBtn.textContent = "🗣️ Describe Picture";
-                    }
-                }, 100);
-            } else {
-                this.describeBtn.disabled = false;
-                this.describeBtn.textContent = "🗣️ Describe Picture";
-            }
-
         } catch (error) {
-            console.error('Error generating speech:', error);
-            alert('Error generating speech. Please try again.');
             this.describeBtn.disabled = false;
             this.describeBtn.textContent = "🗣️ Describe Picture";
         }

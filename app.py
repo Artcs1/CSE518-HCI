@@ -23,6 +23,87 @@ segmentation_agent = SEGMENTATION_AGENT()
 
 HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
+import speech_recognition as sr
+from pydub import AudioSegment
+import tempfile
+
+@app.route("/transcribe_audio", methods=["POST"])
+def transcribe_audio():
+    """
+    Transcribe audio file to text using speech recognition.
+    Works with multiple audio formats (webm, ogg, mp4, wav).
+    """
+    try:
+        if 'audio' not in request.files:
+            return jsonify({
+                "status": "error",
+                "message": "No audio file provided"
+            }), 400
+
+        audio_file = request.files['audio']
+
+        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_audio:
+            audio_file.save(temp_audio.name)
+            temp_audio_path = temp_audio.name
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+            temp_wav_path = temp_wav.name
+
+        try:
+            audio = AudioSegment.from_file(temp_audio_path)
+            audio.export(temp_wav_path, format='wav')
+        except Exception as e:
+            print(f"Audio conversion warning: {e}")
+            temp_wav_path = temp_audio_path
+
+        recognizer = sr.Recognizer()
+
+        with sr.AudioFile(temp_wav_path) as source:
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            audio_data = recognizer.record(source)
+
+            try:
+                text = recognizer.recognize_google(audio_data)
+
+                import os
+                try:
+                    os.unlink(temp_audio_path)
+                    if temp_wav_path != temp_audio_path:
+                        os.unlink(temp_wav_path)
+                except:
+                    pass
+
+                return jsonify({
+                    "status": "success",
+                    "text": text
+                })
+
+            except sr.UnknownValueError:
+                return jsonify({
+                    "status": "error",
+                    "message": "Could not understand the audio. Please speak clearly and try again."
+                }), 400
+
+            except sr.RequestError as e:
+                try:
+                    text = recognizer.recognize_sphinx(audio_data)
+                    return jsonify({
+                        "status": "success",
+                        "text": text
+                    })
+                except:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Speech recognition service unavailable: {str(e)}"
+                    }), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Transcription failed: {str(e)}"
+        }), 500
 
 def call_qwen_vision_api(img_b64, prompt):
     """
@@ -247,17 +328,21 @@ def ask_question():
         
         data = request.json["image"]
         question = request.json.get("question", "")
-        
+
         if not question:
             return jsonify({
                 "status": "error",
                 "message": "No question provided"
             }), 400
+
+        if question == "Error with voice question":
+            answer = f"I did not understand the question. Can you repeat it"
+
+        else:
+            image_base64 = data.split(",")[1]
         
-        image_base64 = data.split(",")[1]
-        
-        prompt = f"Answer this question about the image: {question}"
-        answer = call_qwen_vision_api(image_base64, prompt)
+            prompt = f"Answer this question about the image: {question}"
+            answer = call_qwen_vision_api(image_base64, prompt)
         
         tts = gTTS(text=answer, lang='en', slow=False)
         
@@ -421,7 +506,6 @@ def detect_private():
     
             else:
                 has_private = False
-                # Audio: No private document found
                 try:
                     audio = text_to_audio_base64("No private document detected in the image.")
                     yield f"data: {json.dumps({'audio': audio, 'text': 'No private document detected', 'stage': 'none'})}\n\n"
