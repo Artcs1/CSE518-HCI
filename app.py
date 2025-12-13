@@ -1,8 +1,5 @@
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
-from huggingface_hub import InferenceClient
-
 from gradio_client import Client, handle_file
-
 
 import re
 import requests
@@ -16,14 +13,13 @@ from io import BytesIO
 from PIL import Image
 
 from agents.ocr import OCR_AGENT, pladdleOCR
-
+from agents.vlm import *
+from agents.segmentation import *
 
 from utils import *
 
 app = Flask(__name__)
 
-sam3 = Client("akhaliq/sam3")
-HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 import speech_recognition as sr
 from pydub import AudioSegment
@@ -67,7 +63,6 @@ def transcribe_audio():
             try:
                 text = recognizer.recognize_google(audio_data)
 
-                import os
                 try:
                     os.unlink(temp_audio_path)
                     if temp_wav_path != temp_audio_path:
@@ -106,91 +101,6 @@ def transcribe_audio():
             "status": "error",
             "message": f"Transcription failed: {str(e)}"
         }), 500
-
-def call_qwen_vision_api(img_b64, prompt):
-    """
-    Make API request to Qwen vision model
-    """
-    try:
-        client = InferenceClient(api_key=HF_API_KEY)
-        response = client.chat.completions.create(
-            model="Qwen/Qwen2.5-VL-7B-Instruct",
-            messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
-                    }
-                ]
-            }
-            ],
-            max_tokens=256,
-        )
-    
-        return response.choices[0].message.content
-    
-    except requests.exceptions.Timeout:
-        raise Exception("API request timed out")
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"API request failed: {str(e)}")
-
-def call_qwen_vision_api_stream(img_b64, prompt):
-    """
-    Stream responses from Qwen vision model
-    """
-    try:
-        client = InferenceClient(api_key=HF_API_KEY)
-        stream = client.chat.completions.create(
-            model="Qwen/Qwen2.5-VL-7B-Instruct",
-            messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
-                    }
-                ]
-            }
-            ],
-            max_tokens=512,
-            stream=True  # Enable streaming
-        )
-    
-        return stream
-    
-    except requests.exceptions.Timeout:
-        raise Exception("API request timed out")
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"API request failed: {str(e)}")
-
-def extract_bbox(data):
-    match = re.search(r'```json\n(.*?)\n```', data, re.DOTALL)
-
-    if match:
-        try:
-            json_data = json.loads(match.group(1).strip())
-
-            if isinstance(json_data, list) and json_data and "bbox_2d" in json_data[0]:
-                return json_data[0]["bbox_2d"]
-
-            if isinstance(json_data, dict) and "bbox_2d" in json_data:
-                return json_data["bbox_2d"]
-
-        except json.JSONDecodeError:
-            return None
-
-    return None
 
 def text_to_audio_base64(text):
     """Convert text to base64 audio"""
@@ -482,17 +392,7 @@ def detect_private():
                 cropped_image = image.crop(bbox_orig)
                 cropped_image.save("cropped_image.jpg")
 
-                result = sam3.predict(
-                	image=handle_file('cropped_image.jpg'),
-                	text="the document",
-                	threshold=0.5,
-                	mask_threshold=0.5,
-                	api_name="/segment"
-                )
-
-                img = cv2.imread(result[0]['annotations'][0]['image'])
-                pred_mask = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                pred_mask = pred_mask > 0
+                pred_mask = get_mask()
                 cropped_image_tmp = set_zero_outside_mask(pil_to_opencv(cropped_image), pred_mask)
                 cropped_image_tmp = opencv_to_pil(cropped_image_tmp)
 
