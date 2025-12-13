@@ -173,6 +173,7 @@ class SEGMENTATION_AGENT():
             original_size_list=original_size_list,
         )
 
+
         pred_mask = pred_mask.detach().cpu().numpy()[0]
         pred_mask = pred_mask > 0
 

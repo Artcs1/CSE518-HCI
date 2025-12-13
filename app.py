@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from huggingface_hub import InferenceClient
 
+from gradio_client import Client, handle_file
+
+
 import re
 import requests
 import json
@@ -19,8 +22,8 @@ from utils import *
 
 app = Flask(__name__)
 
+sam3 = Client("akhaliq/sam3")
 segmentation_agent = SEGMENTATION_AGENT()
-
 HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 import speech_recognition as sr
@@ -478,10 +481,22 @@ def detect_private():
                     print(f"Audio error: {e}")
                 
                 cropped_image = image.crop(bbox_orig)
-                
-                pred_mask = segmentation_agent.segment_document(cropped_image)
+                cropped_image.save("cropped_image.jpg")
+
+                result = sam3.predict(
+                	image=handle_file('cropped_image.jpg'),
+                	text="the document",
+                	threshold=0.5,
+                	mask_threshold=0.5,
+                	api_name="/segment"
+                )
+
+                img = cv2.imread(result[0]['annotations'][0]['image'])
+                pred_mask = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                pred_mask = pred_mask > 0
                 cropped_image_tmp = set_zero_outside_mask(pil_to_opencv(cropped_image), pred_mask)
                 cropped_image_tmp = opencv_to_pil(cropped_image_tmp)
+
     
                 rotate_angle = 90
                 rotated_image_v1 = cropped_image_tmp.rotate(rotate_angle, resample=Image.BICUBIC, expand=True, fillcolor=(255,255,255))
