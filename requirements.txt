@@ -1,15 +1,14 @@
 flask
+gradio_client
 matplotlib
 opencv-python
 shapely
-segment_anything
 scikit-image
 albumentations
 pyclipper
 lmdb
 sentencepiece
 timm
-torchscale
 huggingface_hub
 gtts
 SpeechRecognition==3.10.0

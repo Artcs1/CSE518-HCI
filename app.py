@@ -15,15 +15,14 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from PIL import Image
 
-from agents.segmentation import SEGMENTATION_AGENT
 from agents.ocr import OCR_AGENT, pladdleOCR
+
 
 from utils import *
 
 app = Flask(__name__)
 
 sam3 = Client("akhaliq/sam3")
-segmentation_agent = SEGMENTATION_AGENT()
 HF_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
 import speech_recognition as sr
