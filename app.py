@@ -18,12 +18,21 @@ from agents.segmentation import *
 
 from utils import *
 
+
 app = Flask(__name__)
+
 
 
 import speech_recognition as sr
 from pydub import AudioSegment
 import tempfile
+
+import subprocess
+
+@app.route("/debug/ffmpeg")
+def debug_ffmpeg():
+    out = subprocess.check_output(["ffmpeg", "-version"]).decode()
+    return f"<pre>{out}</pre>"
 
 @app.route("/transcribe_audio", methods=["POST"])
 def transcribe_audio():
@@ -117,6 +126,10 @@ def convert_to_bytes(image):
     image.save(buffered, format="PNG")
     image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return image_base64
+
+@app.route("/health")
+def health():
+    return "OK", 200
 
 @app.route("/")
 def index():
@@ -390,6 +403,10 @@ def detect_private():
                     print(f"Audio error: {e}")
                 
                 cropped_image = image.crop(bbox_orig)
+
+                if cropped_image.mode == "RGBA":
+                    cropped_image = cropped_image.convert("RGB")
+
                 cropped_image.save("cropped_image.jpg")
 
                 pred_mask = get_mask()
@@ -400,6 +417,10 @@ def detect_private():
                 rotate_angle = 90
                 rotated_image_v1 = cropped_image_tmp.rotate(rotate_angle, resample=Image.BICUBIC, expand=True, fillcolor=(255,255,255))
                 rotated_image_v1.save("rotated_image.jpg")
+
+
+                if rotated_image_v1.mode == "RGBA":
+                    rotated_image_v1 = rotated_image_v1.convert("RGB")
     
                 points, strs, elapse = pladdleOCR()
     
@@ -414,6 +435,10 @@ def detect_private():
                     total_angle += mean_angle
                     rotated_image_v1 = cropped_image_tmp.rotate(total_angle, resample=Image.BICUBIC, expand=True, fillcolor=(255,255,255))
                     rotated_image_v1.save("rotated_image.jpg")
+
+                    if rotated_image_v1.mode == "RGBA":
+                        rotated_image_v1 = rotated_image_v1.convert("RGB")
+
                     points, strs, elapse = pladdleOCR()
     
                 image_base64_rotated = convert_to_bytes(rotated_image_v1)            
@@ -511,4 +536,4 @@ def detect_private():
     return Response(stream_with_context(generate()), mimetype='text/event-stream')           
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=3000, debug=False)
