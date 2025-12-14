@@ -33,3 +33,8 @@ wget https://paddleocr.bj.bcebos.com/dygraph_v2.0/pgnet/e2e_server_pgnetA_infer.
 ```
 huggingface-cli login
 ```
+
+6. Install ffmpeg
+```
+ sudo apt-get install ffmpeg
+```
