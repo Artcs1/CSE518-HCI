@@ -35,15 +35,13 @@ import subprocess
 
 @app.route("/debug/ffmpeg")
 def debug_ffmpeg():
+    """Debug endpoint to check FFmpeg installation. Returns FFmpeg version information."""
     out = subprocess.check_output(["ffmpeg", "-version"]).decode()
     return f"<pre>{out}</pre>"
 
 @app.route("/transcribe_audio", methods=["POST"])
 def transcribe_audio():
-    """
-    Transcribe audio file to text using speech recognition.
-    Works with multiple audio formats (webm, ogg, mp4, wav).
-    """
+    """Transcribes audio file to text using Google Speech Recognition. Falls back to Sphinx if Google API unavailable."""
     try:
         if 'audio' not in request.files:
             return jsonify({
@@ -116,7 +114,7 @@ def transcribe_audio():
         }), 500
 
 def text_to_audio_base64(text):
-    """Convert text to base64 audio"""
+    """Converts text to base64-encoded MP3 audio using Google TTS. Returns base64 string."""
     from gtts import gTTS
     tts = gTTS(text=text, lang='en', slow=False)
     audio_fp = BytesIO()
@@ -126,6 +124,7 @@ def text_to_audio_base64(text):
 
 
 def convert_to_bytes(image):
+    """Converts PIL Image to base64-encoded PNG string. Returns base64 string."""
     buffered = BytesIO()
     image.save(buffered, format="PNG")
     image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
@@ -133,14 +132,18 @@ def convert_to_bytes(image):
 
 @app.route("/health")
 def health():
+    """Serves the main web interface. Renders index.html template."""
     return "OK", 200
 
 @app.route("/")
 def index():
+    """Serves the main web interface. Renders index.html template."""
     return render_template("index.html")
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    """Saves uploaded base64 image to server disk. Writes to photo.jpg file."""
+
     try:
         data = request.json["image"]
         image_data = data.split(",")[1]
@@ -156,7 +159,7 @@ def upload():
 
 @app.route("/speak", methods=["POST"])
 def speak():
-    """Convert text to speech and return audio"""
+    """Generates complete audio description of image in one chunk. Returns base64 audio data."""
     try:
         from gtts import gTTS
         
@@ -185,6 +188,7 @@ def speak():
 
 @app.route("/speak_stream", methods=["POST"])
 def speak_stream():
+    """Streams image description as real-time audio chunks. Splits text into sentences and converts each to audio immediately."""
     def generate():
         try:
             data = request.json["image"]
@@ -241,7 +245,7 @@ def speak_stream():
 
 @app.route("/ask_question", methods=["POST"])
 def ask_question():
-    """Answer a voice question about the image"""
+    """Answers voice question about image using vision API. Returns audio response."""
     try:
         from gtts import gTTS
         
@@ -286,7 +290,7 @@ def ask_question():
 detection_cache = {}
 @app.route("/detect_private", methods=["POST"])
 def detect_private():
-    """Detect private/confidential objects in the image using Qwen Vision API"""
+    """Detects and masks private information in documents using multi-stage OCR, qwen classification pipeline and SAM3. Implements interactive masking workflow with user prompts."""
     def generate():
         try:
             data = request.json["image"]
@@ -379,8 +383,6 @@ def detect_private():
                 image_base64_result = convert_to_bytes(hr_im_copy)
                 yield f"data: {json.dumps({'done': True, 'has_private_info': True, 'cropped_image': f'data:image/png;base64,{image_base64_result}'})}\n\n"
                 return
-            
-            print("Running full detection pipeline")
             
             try:
                 audio = text_to_audio_base64("Scanning for private information")

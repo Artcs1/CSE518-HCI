@@ -1,4 +1,4 @@
-# CSE518-HCI
+# Accessible Camera App - Documentation (CSE518-HCI-Project)
 
 ## Install
 
@@ -38,3 +38,119 @@ huggingface-cli login
 ```
  sudo apt-get install ffmpeg
 ```
+
+## Overview
+
+An accessible web application designed for visually impaired users to interact with images through voice commands and audio feedback. The app provides image description, voice Q&A, and intelligent privacy masking for sensitive documents.
+
+---
+
+## Project Structure
+
+```
+accessible-camera-app/
+│
+├── app.py                      # Flask backend server
+├── templates/
+│   └── index.html             # Main web interface
+├── static/
+│   └── app.js                 # Frontend JavaScript logic
+├── agents/
+│   ├── ocr.py                 # OCR agent (PaddleOCR integration)
+│   ├── vlm.py                 # Vision Language Model functions
+│   └── segmentation.py        # Image segmentation utilities
+├── utils.py                   # Helper functions
+├── label2item_list.json       # Document category mappings
+└── requirements.txt           # Python dependencies
+```
+
+---
+
+## Core Features
+
+### 1. **Image Description** 🗣️
+- Captures or uploads image
+- Generates natural language description using AI
+- Converts description to speech
+- Streams audio in real-time as sentences are generated
+
+### 2. **Voice Q&A** 🎤
+- Records user's voice question about the image
+- Transcribes speech to text
+- Queries AI vision model for answer
+- Returns spoken audio response
+
+### 3. **Privacy Masking** 🛡️
+- Detects documents in images (bank statements, medical records, IDs, etc.)
+- Extracts and classifies text fields (names, addresses, account numbers, etc.)
+- Interactive voice-guided masking workflow
+- Option for automatic or custom field masking
+- Returns image with sensitive information blacked out
+
+---
+
+## Technology Stack
+
+### Backend
+- **Flask** - Web framework
+- **PaddleOCR** - Text detection and recognition
+- **Qwen Vision API** - Image understanding and VLM
+- **gTTS** - Google Text-to-Speech
+- **SpeechRecognition** - Audio transcription
+- **PIL/OpenCV** - Image processing
+
+### Frontend
+- **Vanilla JavaScript** - No frameworks
+- **MediaRecorder API** - Audio recording
+- **Fetch API** - Server communication
+- **HTML5 Canvas** - Image display
+- **Web Audio API** - Audio playback
+
+---
+
+## Privacy Masking Workflow
+
+```
+1. Document Detection
+   └─> Locate paper document in image
+   
+2. Document Extraction & Preprocessing
+   └─> Crop, mask, and rotate document
+   
+3. OCR & Text Extraction
+   └─> Extract all text regions with coordinates
+   
+4. Document Classification
+   └─> Identify document type (bank statement, medical record, etc.)
+   
+5. Field Classification
+   └─> Classify each text field (name, address, account #, etc.)
+   
+6. Interactive Masking
+   ├─> User Prompt: "Do you want regular masking?"
+   │   ├─> YES: Mask all sensitive fields
+   │   └─> NO: "Which fields do you want to mask?"
+   │       └─> User specifies fields by voice
+   
+7. Apply Masking
+   └─> Black out selected regions in original image
+   
+8. Return Result
+   └─> Masked image displayed to user
+```
+
+---
+
+---
+
+## Accessibility Features
+
+1. **Voice-First Interface**: All interactions can be voice-driven
+2. **Audio Feedback**: Every action provides spoken status updates
+3. **Keyboard Navigation**: All buttons are keyboard accessible
+4. **Screen Reader Support**: ARIA labels on all interactive elements
+5. **High Contrast**: Simple, clear visual design
+6. **Mobile Optimized**: Responsive layout for phones
+
+---
+

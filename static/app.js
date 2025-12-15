@@ -1,3 +1,6 @@
+/**
+ * sightAI - Accessible Camera Application for Visually Impaired Users
+ */
 class sightAI{
     constructor() {
         this.video = document.getElementById("video");
@@ -14,7 +17,6 @@ class sightAI{
         this.isPlayingAudio = false;
         this.currentAudio = null;
         
-        // Media recorder for cross-browser speech input
         this.mediaRecorder = null;
         this.audioChunks = [];
         this.isRecording = false;
@@ -24,10 +26,11 @@ class sightAI{
         this.startCamera();
     }
 
+    /**
+     * Initializes camera stream with back camera as default on mobile. Falls back to front camera if unavailable.
+     */
     async startCamera() {
         try {
-            // Request back camera (environment-facing) on mobile devices
-            // Falls back to front camera if back camera is not available
             let stream = await navigator.mediaDevices.getUserMedia({ 
                 video: {
                     facingMode: { ideal: 'environment' }  // 'environment' = back camera
@@ -40,6 +43,9 @@ class sightAI{
         }
     }
     
+    /**
+     * Attaches event listeners to all UI buttons. Sets up click handlers for interactions.
+     */
     initializeEvents() {
         this.takePhotoBtn.addEventListener("click", () => this.takePhoto());
         this.fromFilesBtn.addEventListener("click", () => this.fileInput.click());
@@ -49,12 +55,18 @@ class sightAI{
         this.askQuestionBtn.addEventListener("click", () => this.askQuestion());
     }
 
+    /**
+     * Enables all action buttons after image is captured or loaded. Buttons are disabled by default.
+     */
     enableActionButtons() {
         this.maskInfoBtn.disabled = false;
         this.describeBtn.disabled = false;
         this.askQuestionBtn.disabled = false;
     }
 
+    /**
+     * Displays image on canvas and hides video stream. Stores current image data and enables action buttons.
+     */
     displayImageOnCanvas(imageData) {
         const img = new Image();
         img.onload = () => {
@@ -75,6 +87,9 @@ class sightAI{
         img.src = imageData;
     }
 
+    /**
+     * Captures photo from video stream and displays it. Takes snapshot of current video frame.
+     */
     takePhoto() {
         this.canvas.width = this.video.videoWidth;
         this.canvas.height = this.video.videoHeight;
@@ -86,6 +101,9 @@ class sightAI{
         this.displayImageOnCanvas(imageData);
     }
 
+    /**
+     * Captures photo from video stream and displays it. Takes snapshot of current video frame.
+     */
     loadImageFromFile(event) {
         const file = event.target.files[0];
         if (file) {
@@ -98,11 +116,12 @@ class sightAI{
         }
     }
 
-    // NEW: Record audio using MediaRecorder (works in all modern browsers)
+    /**
+     * Records audio using MediaRecorder API with configurable duration. Returns promise that resolves with audio blob.
+     */	
     async recordAudio(maxDuration = 10000) {
         return new Promise(async (resolve, reject) => {
             try {
-                // Request microphone access
                 this.recordingStream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
                         echoCancellation: true,
@@ -113,7 +132,6 @@ class sightAI{
 
                 this.audioChunks = [];
                 
-                // Use different MIME types based on browser support
                 let mimeType = 'audio/webm';
                 if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
                     mimeType = 'audio/webm;codecs=opus';
@@ -153,11 +171,9 @@ class sightAI{
                     reject(new Error('Recording failed: ' + event.error));
                 };
 
-                // Start recording
                 this.mediaRecorder.start();
                 this.isRecording = true;
 
-                // Auto-stop after max duration
                 setTimeout(() => {
                     if (this.isRecording && this.mediaRecorder && this.mediaRecorder.state === 'recording') {
                         this.stopRecording();
@@ -170,6 +186,9 @@ class sightAI{
         });
     }
 
+    /**
+     * Stops the current audio recording. Sets recording flag to false and stops MediaRecorder.
+     */	
     stopRecording() {
         if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
             this.isRecording = false;
@@ -177,7 +196,9 @@ class sightAI{
         }
     }
 
-    // NEW: Show recording modal with visual feedback
+    /**
+     * Stops the current audio recording. Sets recording flag to false and stops MediaRecorder.
+     */
     showRecordingModal() {
         return new Promise((resolve, reject) => {
             const overlay = document.createElement('div');
@@ -267,7 +288,6 @@ class sightAI{
                 }
             };
 
-            // Start recording immediately
             audioPromise = this.recordAudio(10000);
 
             stopBtn.addEventListener('click', () => {
@@ -282,7 +302,6 @@ class sightAI{
                 });
             });
 
-            // Handle recording completion
             audioPromise.then(audioBlob => {
                 if (overlay.parentNode) {
                     cleanup();
@@ -295,6 +314,9 @@ class sightAI{
         });
     }
 
+    /**
+     * Transcribes audio blob to text using backend service. Sends audio file to /transcribe_audio endpoint.
+     */
     async transcribeAudio(audioBlob) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         
@@ -306,10 +328,12 @@ class sightAI{
             }
         }
 
-        // Use backend transcription service
         return await this.transcribeAudioBackend(audioBlob);
     }
 
+    /**
+     * Sends audio to backend transcription service. Posts audio file to server and returns transcribed text.
+     */
     async transcribeAudioBackend(audioBlob) {
         const formData = new FormData();
         formData.append('audio', audioBlob, 'recording.webm');
@@ -332,6 +356,9 @@ class sightAI{
         }
     }
 
+    /**
+     * Records voice question, transcribes it, and gets audio answer. Handles entire voice Q&A workflow.
+     */
     async askQuestion() {
         if (!this.currentImageData) {
             alert("Please take or select an image first.");
@@ -370,14 +397,15 @@ class sightAI{
         } catch (error) {
             await this.processQuestion("Error with voice question");
 	    console.error('Error with voice question:', error);
-            //alert(`Error: ${error.message || 'Voice question failed. Please try again.'}`);
         } finally {
             this.askQuestionBtn.disabled = false;
             this.askQuestionBtn.textContent = "🎤 Ask Question";
         }
     }
 
-    // Process the question and get audio response
+    /**
+     * Sends question to backend and plays audio answer. Posts question and image to /ask_question endpoint.
+     */
     async processQuestion(question) {
         const finalData = {
             completedAt: new Date().toISOString(),
@@ -400,7 +428,6 @@ class sightAI{
         if (result.status === 'success') {
             console.log('Answer:', result.answer);
             
-            // Play audio response
             const audio = new Audio(result.audio);
             
             return new Promise((resolve, reject) => {
@@ -424,8 +451,10 @@ class sightAI{
         }
     }
 
-    // Updated sendMaskInfo method for the sightAI class
-    
+
+    /**
+     * Initiates privacy detection and masking workflow. Starts multi-stage detection pipeline with interactive prompts.
+     */
     async sendMaskInfo() {
         try {
             this.maskInfoBtn.disabled = true;
@@ -438,7 +467,6 @@ class sightAI{
                 this.currentAudio = null;
             }
     
-            // Start the detection process (no session_id on first call)
             await this.callDetectPrivate(null, null, null);
     
         } catch (error) {
@@ -450,6 +478,9 @@ class sightAI{
         }
     }
     
+    /**
+     * Calls privacy detection endpoint with user responses and session management. Handles streaming updates and user prompts.
+     */
     async callDetectPrivate(userResponse, customFields, sessionId) {
         try {
             const finalData = {
@@ -511,44 +542,32 @@ class sightAI{
                                 }
                             }
     
-                            // Capture session_id from server
                             if (data.session_id) {
                                 receivedSessionId = data.session_id;
                                 console.log('Received session ID:', receivedSessionId);
                             }
-    
-                            // Server is asking: "Do you want regular masking?"
                             if (data.request_user_input) {
-                                // Wait for audio queue to finish
                                 await this.waitForAudioQueue();
                                 
-                                // Get user's voice response
                                 const userVoiceResponse = await this.getUserVoiceResponse();
                                 
                                 if (userVoiceResponse === 'yes') {
-                                    // User wants regular masking - call again with yes and session_id
                                     await this.callDetectPrivate('yes', null, receivedSessionId);
                                 } else {
-                                    // User said no - server will ask for custom fields next
                                     await this.callDetectPrivate('no', null, receivedSessionId);
                                 }
                                 return;
                             }
     
-                            // Server is asking: "Which fields do you want to mask?"
                             if (data.request_custom_fields) {
-                                // Wait for audio queue to finish
                                 await this.waitForAudioQueue();
                                 
-                                // Get user's custom field names
                                 const customFieldsResponse = await this.getCustomFieldsResponse();
                                 
-                                // Call again with custom fields and session_id
                                 await this.callDetectPrivate('no', customFieldsResponse, receivedSessionId);
                                 return;
                             }
     
-                            // Processing is done
                             if (data.done) {
                                 const checkQueue = setInterval(() => {
                                     if (!this.isPlayingAudio && this.audioQueue.length === 0) {
@@ -575,6 +594,9 @@ class sightAI{
         }
     }
     
+    /**
+     * Calls privacy detection endpoint with user responses and session management. Handles streaming updates and user prompts.
+     */
     async waitForAudioQueue() {
         return new Promise((resolve) => {
             const checkInterval = setInterval(() => {
@@ -586,17 +608,17 @@ class sightAI{
         });
     }
     
+    /**
+     * Records and transcribes user's yes/no response. Returns 'yes' or 'no' based on transcription.
+     */
     async getUserVoiceResponse() {
         try {
-            // Show recording modal
             const audioBlob = await this.showRecordingModal();
             
-            // Transcribe the audio
             const response = await this.transcribeAudio(audioBlob);
             
             console.log('User voice response:', response);
             
-            // Parse yes/no
             const lowerResponse = response.toLowerCase().trim();
             if (lowerResponse.includes('yes') || 
                 lowerResponse.includes('yeah') || 
@@ -610,17 +632,16 @@ class sightAI{
             }
         } catch (error) {
             console.error('Error getting voice response:', error);
-            // Default to 'no' if there's an error
             return 'no';
         }
     }
     
+    /**
+     * Records and transcribes custom field names from user. Returns transcribed field names.
+     */
     async getCustomFieldsResponse() {
         try {
-            // Show recording modal for custom fields
             const audioBlob = await this.showRecordingModal();
-            
-            // Transcribe the audio
             const response = await this.transcribeAudio(audioBlob);
             
             console.log('Custom fields response:', response);
@@ -629,11 +650,13 @@ class sightAI{
             
         } catch (error) {
             console.error('Error getting custom fields:', error);
-            // Return empty string if error
             return '';
         }
     }
 
+    /**
+     * Plays next audio chunk from queue. Recursively continues until queue is empty.
+     */
     playNextAudio() {
         if (this.audioQueue.length === 0) {
             this.isPlayingAudio = false;
@@ -661,6 +684,9 @@ class sightAI{
         });
     }
 
+    /**
+     * Streams image description as real-time audio chunks. Receives streaming response and plays audio progressively.
+     */
     async describeImageStream() {
         try {
             if (this.currentAudio) {
