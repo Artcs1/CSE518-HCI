@@ -1,6 +1,6 @@
 # Accessible Camera App - Documentation (CSE518-HCI-Project)
 
-## Install
+## Installation
 
 1. Create a conda enviorenment
 
@@ -39,9 +39,11 @@ huggingface-cli login
  sudo apt-get install ffmpeg
 ```
 
+---
+
 ## Overview
 
-An accessible web application designed for visually impaired users to interact with images through voice commands and audio feedback. The app provides image description, voice Q&A, and intelligent privacy masking for sensitive documents.
+An accessible web MULTI-AGENT application designed for visually impaired users to interact with images through voice commands and audio feedback. The app provides image description, voice Q&A, and intelligent privacy masking for sensitive documents.
 
 ---
 
@@ -129,7 +131,7 @@ accessible-camera-app/
 6. Interactive Masking
    ├─> User Prompt: "Do you want regular masking?"
    │   ├─> YES: Mask all sensitive fields
-   │   └─> NO: "Which fields do you want to mask?"
+   │   └─> If "YES" is not detected: "Which fields do you want to mask?"
    │       └─> User specifies fields by voice
    
 7. Apply Masking
@@ -141,16 +143,18 @@ accessible-camera-app/
 
 ---
 
----
-
 ## Accessibility Features
 
-1. **Voice-First Interface**: All interactions can be voice-driven
-2. **Audio Feedback**: Every action provides spoken status updates
-3. **Keyboard Navigation**: All buttons are keyboard accessible
-4. **Screen Reader Support**: ARIA labels on all interactive elements
-5. **High Contrast**: Simple, clear visual design
-6. **Mobile Optimized**: Responsive layout for phones
+1. **Audio Feedback**: Every action provides spoken status updates
+2. **Keyboard Navigation**: All buttons are keyboard accessible
+3. **Screen Reader Support**: ARIA labels on all interactive elements
+4. **High Contrast**: Simple, clear visual design
+5. **Mobile Optimized**: Responsive layout for phones
 
 ---
 
+## Live Demo
+
+Application is more stabled in localhost, but I create a live demo for a limited time to hold user studies at: [cse-project](https://116632931-sbuproject.com/)
+
+---
