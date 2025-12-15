@@ -26,14 +26,20 @@ class sightAI{
 
     async startCamera() {
         try {
-            let stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            // Request back camera (environment-facing) on mobile devices
+            // Falls back to front camera if back camera is not available
+            let stream = await navigator.mediaDevices.getUserMedia({ 
+                video: {
+                    facingMode: { ideal: 'environment' }  // 'environment' = back camera
+                } 
+            });
             this.video.srcObject = stream;
         } catch (error) {
             console.error("Camera access denied:", error);
             alert("Unable to access camera. Please check permissions.");
         }
     }
-
+    
     initializeEvents() {
         this.takePhotoBtn.addEventListener("click", () => this.takePhoto());
         this.fromFilesBtn.addEventListener("click", () => this.fileInput.click());

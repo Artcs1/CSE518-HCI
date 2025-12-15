@@ -18,10 +18,14 @@ from agents.segmentation import *
 
 from utils import *
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+
+
 
 app = Flask(__name__)
 
-
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 import speech_recognition as sr
 from pydub import AudioSegment
@@ -181,7 +185,6 @@ def speak():
 
 @app.route("/speak_stream", methods=["POST"])
 def speak_stream():
-    """Stream audio generation in real-time as text is generated"""
     def generate():
         try:
             data = request.json["image"]
@@ -193,7 +196,6 @@ def speak_stream():
             sentence_endings = re.compile(r'[.!?]+')
             
             for chunk in stream:
-                # Get the delta content
                 if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if hasattr(delta, 'content') and delta.content:
@@ -488,6 +490,13 @@ def detect_private():
                         'index': idx,
                         'bbox_2d': data_extracted[idx]['bbox_2d']
                     })
+
+                try:
+                    audio = text_to_audio_base64(f"Classification complete.")
+                    yield f"data: {json.dumps({'audio': audio, 'text': f'Classifying {len(texts)} text regions', 'stage': 'classifying'})}\n\n"
+                except Exception as e:
+                    print(f"Audio error: {e}")
+                 
                 
                 crop_x = bbox_orig[0]
                 crop_y = bbox_orig[1]
