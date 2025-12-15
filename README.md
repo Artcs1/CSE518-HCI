@@ -155,6 +155,6 @@ accessible-camera-app/
 
 ## Live Demo
 
-Application is more stabled in localhost, but I create a live demo for a limited time to hold user studies at: [cse-project](https://116632931-sbuproject.com/)
+Localhost application is more stable, but a live demo is available at: [cse-project](https://116632931-sbuproject.com/)
 
 ---
